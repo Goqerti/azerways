@@ -50,8 +50,13 @@ exports.logout = (req, res) => {
     });
 };
 
-exports.getCurrentUser = (req, res) => res.json(req.session.user);
-
+exports.getCurrentUser = (req, res) => {
+    if (req.session.user) {
+        res.json(req.session.user);
+    } else {
+        res.status(401).json({ message: 'İstifadəçi daxil olmayıb.' });
+    }
+};
 
 // --- Password Reset ---
 exports.forgotPassword = (req, res) => {
@@ -108,7 +113,7 @@ exports.resetPassword = (req, res) => {
         
         delete req.session.otpData;
         
-        logAction(req, 'PASSWORD_RESET');
+        logAction(req, 'PASSWORD_RESET', { user: username });
         telegram.sendLog(telegram.formatLog({displayName: username, role: users[username].role}, `mail vasitəsilə şifrəsini yenilədi.`));
         res.status(200).json({ message: "Şifrəniz uğurla yeniləndi." });
 
@@ -116,7 +121,6 @@ exports.resetPassword = (req, res) => {
         res.status(500).json({ message: "Şifrə yenilənərkən server xətası baş verdi." });
     }
 };
-
 
 // --- User Management (Owner only) ---
 
@@ -154,7 +158,7 @@ exports.createUser = (req, res) => {
 
         const permissions = fileStore.getPermissions();
         if (!permissions[username]) {
-            permissions[username] = { canEditOrder: false, canDeleteOrder: false, canEditFinancials: false };
+            permissions[username] = { canEditOrder: false, canEditFinancials: false, canDeleteOrder: false };
             fileStore.savePermissions(permissions);
         }
         
@@ -302,12 +306,6 @@ exports.updateUserByPassword = (req, res) => {
     const logMessage = `<b>${usernameToUpdate}</b> adlı istifadəçinin məlumatlarını yenilədi.`;
     telegram.sendLog(telegram.formatLog(logUser, logMessage));
     logAction(req, 'UPDATE_USER_BY_PASSWORD', { targetUser: usernameToUpdate });
-
-    res.status(200).json({ message: "İstifadəçi məlumatları uğurla yeniləndi." });
-};
-
-    const logMessage = `<b>${usernameToUpdate}</b> adlı istifadəçinin məlumatlarını yenilədi.`;
-    telegram.sendLog(telegram.formatLog(req.session.user || {displayName: 'Owner (permissions.html)'}, logMessage));
 
     res.status(200).json({ message: "İstifadəçi məlumatları uğurla yeniləndi." });
 };
