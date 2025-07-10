@@ -1,0 +1,1 @@
+{"id":"7b5f9237-2a5f-4ddf-8d37-d3cd925dde4b","creationTimestamp":"2025-07-10T15:23:15.420Z","createdBy":"Səid","driverName":"a","driverPayment":0,"destination":"s","departureDate":"","arrivalDate":"","vehicleModel":"","vehiclePlate":"","guestCount":2,"guestNames":["d","d"],"otherCosts":[],"totalCost":0}
