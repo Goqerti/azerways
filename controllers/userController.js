@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const nodemailer = require('nodemailer');
 const fileStore = require('../services/fileStore');
 const telegram = require('../services/telegramService');
+const { logAction } = require('../services/auditLogService');
 
 // --- Mail Service Setup ---
 const transporter = nodemailer.createTransport({
@@ -22,25 +23,24 @@ exports.login = (req, res) => {
     const user = users[username];
 
     if (user && bcrypt.compareSync(password, user.password)) {
-        // İstifadəçi sessiyasını yarat
         req.session.user = { username, role: user.role, displayName: user.displayName };
+        logAction(req, 'LOGIN_SUCCESS');
         telegram.sendLog(telegram.formatLog(req.session.user, 'sistemə daxil oldu.'));
 
-        // ROLA GÖRƏ YÖNLƏNDİRMƏ
         if (user.role === 'finance') {
-            res.redirect('/finance.html'); // Əgər rol "finance"dırsa, maliyyə səhifəsinə yönləndir
+            res.redirect('/finance.html');
         } else {
-            res.redirect('/'); // Digər bütün rollar üçün əsas səhifəyə yönləndir
+            res.redirect('/');
         }
         
     } else {
-        // Giriş uğursuz olarsa
         res.redirect('/login.html?error=true');
     }
 };
 
 exports.logout = (req, res) => {
     if (req.session.user) {
+        logAction(req, 'LOGOUT');
         telegram.sendLog(telegram.formatLog(req.session.user, 'sistemdən çıxış etdi.'));
     }
     req.session.destroy(err => {
@@ -108,6 +108,7 @@ exports.resetPassword = (req, res) => {
         
         delete req.session.otpData;
         
+        logAction(req, 'PASSWORD_RESET');
         telegram.sendLog(telegram.formatLog({displayName: username, role: users[username].role}, `mail vasitəsilə şifrəsini yenilədi.`));
         res.status(200).json({ message: "Şifrəniz uğurla yeniləndi." });
 
@@ -126,6 +127,10 @@ exports.verifyOwner = (req, res) => {
     
     if (owner && bcrypt.compareSync(password, owner.password)) {
         req.session.isOwnerVerified = true;
+        if (!req.session.user) {
+             const ownerUsername = Object.keys(users).find(u => users[u].role === 'owner');
+             req.session.user = { username: ownerUsername, role: 'owner', displayName: owner.displayName };
+        }
         res.status(200).json({ success: true });
     } else {
         res.status(401).json({ message: 'Parol yanlışdır' });
@@ -149,11 +154,14 @@ exports.createUser = (req, res) => {
 
         const permissions = fileStore.getPermissions();
         if (!permissions[username]) {
-            permissions[username] = { canEditOrder: false, canEditFinancials: false, canDeleteOrder: false };
+            permissions[username] = { canEditOrder: false, canDeleteOrder: false, canEditFinancials: false };
             fileStore.savePermissions(permissions);
         }
         
-        telegram.sendLog(telegram.formatLog(req.session.user, `<b>${displayName} (${role})</b> adlı yeni istifadəçi yaratdı.`));
+        const logUser = req.session.user || { displayName: 'Owner (Panel)', role: 'owner' };
+        logAction(req, 'CREATE_USER', { newUser: username, role: role });
+        telegram.sendLog(telegram.formatLog(logUser, `<b>${displayName} (${role})</b> adlı yeni istifadəçi yaratdı.`));
+        
         res.status(201).json({ message: 'Yeni istifadəçi uğurla yaradıldı!' });
 
     } catch (error) {
@@ -199,6 +207,7 @@ exports.updateUser = (req, res) => {
         }
         
         fileStore.saveAllUsers(users);
+        logAction(req, 'UPDATE_USER', { targetUser: username });
         telegram.sendLog(telegram.formatLog(req.session.user, `<b>${username}</b> adlı istifadəçinin məlumatlarını yenilədi.`));
         res.status(200).json({ message: 'İstifadəçi məlumatları yeniləndi.' });
     } catch (error) {
@@ -224,6 +233,7 @@ exports.deleteUser = (req, res) => {
         const deletedUserDisplayName = users[username].displayName;
         delete users[username];
         fileStore.saveAllUsers(users);
+        logAction(req, 'DELETE_USER', { targetUser: username });
         telegram.sendLog(telegram.formatLog(req.session.user, `<b>${deletedUserDisplayName} (${username})</b> adlı istifadəçini sildi.`));
         res.status(200).json({ message: 'İstifadəçi silindi.' });
     } catch (error) {
@@ -231,9 +241,6 @@ exports.deleteUser = (req, res) => {
     }
 };
 
-/**
- * Owner paroluna əsasən bütün istifadəçilərin siyahısını qaytarır.
- */
 exports.getUsersByPassword = (req, res) => {
     const { password } = req.body;
     if (!password) {
@@ -260,9 +267,6 @@ exports.getUsersByPassword = (req, res) => {
     }
 };
 
-/**
- * Owner paroluna əsasən istifadəçinin məlumatlarını yeniləyir.
- */
 exports.updateUserByPassword = (req, res) => {
     const { ownerPassword, newUserData } = req.body;
     const { usernameToUpdate } = req.params;
@@ -294,6 +298,14 @@ exports.updateUserByPassword = (req, res) => {
 
     fileStore.saveAllUsers(allUsers);
     
+    const logUser = req.session.user || { displayName: 'Owner (Panel)', role: 'owner' };
+    const logMessage = `<b>${usernameToUpdate}</b> adlı istifadəçinin məlumatlarını yenilədi.`;
+    telegram.sendLog(telegram.formatLog(logUser, logMessage));
+    logAction(req, 'UPDATE_USER_BY_PASSWORD', { targetUser: usernameToUpdate });
+
+    res.status(200).json({ message: "İstifadəçi məlumatları uğurla yeniləndi." });
+};
+
     const logMessage = `<b>${usernameToUpdate}</b> adlı istifadəçinin məlumatlarını yenilədi.`;
     telegram.sendLog(telegram.formatLog(req.session.user || {displayName: 'Owner (permissions.html)'}, logMessage));
 
